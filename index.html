@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Sistema de Consulta de Laudos</title>
+
+<script src="https://apis.google.com/js/api.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
+<style>
+body{
+    font-family:"Segoe UI", Arial;
+    background:#0b1622;
+    margin:0;
+    color:#e5e7eb;
+}
+.header{
+    background:#0f2b46;
+    padding:20px;
+    text-align:center;
+    font-size:22px;
+    font-weight:600;
+}
+.container{
+    max-width:950px;
+    margin:30px auto;
+    background:#111c2b;
+    padding:25px;
+    border-radius:10px;
+    box-shadow:0 5px 20px rgba(0,0,0,0.4);
+}
+.grid{
+    display:grid;
+    grid-template-columns: repeat(auto-fit,minmax(200px,1fr));
+    gap:15px;
+}
+label{
+    font-size:13px;
+    color:#9ca3af;
+}
+input,select{
+    width:100%;
+    padding:10px;
+    border-radius:6px;
+    border:1px solid #334155;
+    background:#1e293b;
+    color:white;
+}
+button{
+    background:#2563eb;
+    color:white;
+    border:none;
+    padding:12px;
+    border-radius:6px;
+    font-weight:600;
+    cursor:pointer;
+}
+button:hover{background:#1d4ed8;}
+.stat{
+    background:#1e3a8a;
+    padding:10px;
+    border-radius:6px;
+    margin-bottom:15px;
+    font-weight:600;
+}
+.resultado{
+    border:1px solid #334155;
+    padding:10px;
+    border-radius:6px;
+    margin-top:10px;
+    background:#0f172a;
+}
+.progressBox{
+    margin-top:10px;
+    background:#1e293b;
+    border-radius:6px;
+    overflow:hidden;
+    display:none;
+}
+.progressBar{
+    height:18px;
+    background:#22c55e;
+    width:0%;
+    text-align:center;
+    font-size:12px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">Sistema de Consulta de Laudos</div>
+
+<div class="container">
+<div id="loginDiv"></div>
+<p id="status"></p>
+
+<div id="sistema" style="display:none;">
+
+<div class="stat">Laudos encontrados: <span id="total">0</span></div>
+
+<h3>🔎 Busca Individual</h3>
+<div class="grid">
+<div>
+<label>Ano</label>
+<select id="ano"><option>2025</option><option>2026</option><option>2027</option></select>
+</div>
+<div>
+<label>Mês</label>
+<select id="mes">
+<option value="01_JANEIRO">Janeiro</option>
+<option value="02_FEVEREIRO">Fevereiro</option>
+<option value="03_MARCO">Março</option>
+<option value="04_ABRIL">Abril</option>
+<option value="05_MAIO">Maio</option>
+<option value="06_JUNHO">Junho</option>
+<option value="07_JULHO">Julho</option>
+<option value="08_AGOSTO">Agosto</option>
+<option value="09_SETEMBRO">Setembro</option>
+<option value="10_OUTUBRO">Outubro</option>
+<option value="11_NOVEMBRO">Novembro</option>
+<option value="12_DEZEMBRO">Dezembro</option>
+</select>
+</div>
+<div>
+<label>Dia</label>
+<input type="text" id="dia" placeholder="Ex: 03">
+</div>
+<div>
+<label>Paciente</label>
+<input type="text" id="paciente">
+</div>
+</div>
+
+<button onclick="buscar()">Buscar por Dia</button>
+
+<hr style="margin:30px 0; border-color:#334155;">
+
+<h3>📅 Busca por Período</h3>
+<div class="grid">
+<div>
+<label>Data Inicial</label>
+<input type="date" id="dataInicio">
+</div>
+<div>
+<label>Data Final</label>
+<input type="date" id="dataFim">
+</div>
+<div>
+<label>Paciente (opcional)</label>
+<input type="text" id="pacientePeriodo">
+</div>
+</div>
+
+<button onclick="buscarPeriodo()">Buscar no Período</button>
+
+<div class="progressBox" id="progressBox">
+<div class="progressBar" id="progressBar">0%</div>
+</div>
+
+<div id="resultados"></div>
+
+</div>
+</div>
+
+<script>
+const CLIENT_ID="414481335432-jpolujn5k3og36vf6mq3m54gj5eutevk.apps.googleusercontent.com";
+const API_KEY="AIzaSyDsqewcnEOazkgLIMxLQfvtF1qW2bNpJoY";
+const ROOT_ID="1DPvoP6AikajoQOWuzUVV5ts-tTWSaUlg";
+
+let accessToken=null,tokenClient;
+
+window.onload=()=>{
+gapi.load('client',async()=>{await gapi.client.init({apiKey:API_KEY});});
+tokenClient=google.accounts.oauth2.initTokenClient({
+client_id:CLIENT_ID,
+scope:"https://www.googleapis.com/auth/drive.readonly",
+callback:(r)=>{accessToken=r.access_token;
+status.innerHTML="Login realizado ✔";
+sistema.style.display="block";}
+});
+loginDiv.innerHTML='<button onclick="tokenClient.requestAccessToken()">Entrar com Google</button>';
+};
+
+async function buscar(){
+let anoV=ano.value,mesV=mes.value,diaV=dia.value,nome=paciente.value;
+let anoId=await pasta(ROOT_ID,anoV);
+let mesId=await pasta(anoId,mesV);
+let diaId=await pasta(mesId,diaV);
+let pdfs=await arquivos(diaId,nome);
+mostrar(pdfs);
+}
+
+async function buscarPeriodo(){
+let ini=new Date(dataInicio.value),fim=new Date(dataFim.value);
+let nome=pacientePeriodo.value;
+let totalDias=Math.ceil((fim-ini)/(1000*60*60*24))+1;
+let cont=0,resultadosArr=[];
+
+progressBox.style.display="block";
+
+while(ini<=fim){
+let anoV=ini.getFullYear();
+let mesN=(ini.getMonth()+1).toString().padStart(2,'0');
+let diaV=ini.getDate().toString().padStart(2,'0');
+let mesNome=document.querySelector(`#mes option[value^="${mesN}_"]`)?.value;
+
+try{
+let anoId=await pasta(ROOT_ID,anoV);
+let mesId=await pasta(anoId,mesNome);
+let diaId=await pasta(mesId,diaV);
+let pdfs=await arquivos(diaId,nome);
+resultadosArr=resultadosArr.concat(pdfs);
+}catch{}
+
+cont++;
+let p=Math.round((cont/totalDias)*100);
+progressBar.style.width=p+"%";
+progressBar.innerText=p+"%";
+
+ini.setDate(ini.getDate()+1);
+}
+
+progressBox.style.display="none";
+mostrar(resultadosArr);
+}
+
+async function pasta(parent,name){
+let r=await fetch(`https://www.googleapis.com/drive/v3/files?q='${parent}'+in+parents+and+name='${name}'+and+mimeType='application/vnd.google-apps.folder'`,
+{headers:{Authorization:"Bearer "+accessToken}});
+let d=await r.json();
+return d.files[0]?.id;
+}
+
+async function arquivos(parent,name){
+let r=await fetch(`https://www.googleapis.com/drive/v3/files?q='${parent}'+in+parents+and+name contains '${name}'+and+mimeType='application/pdf'`,
+{headers:{Authorization:"Bearer "+accessToken}});
+let d=await r.json();
+return d.files||[];
+}
+
+function mostrar(files){
+resultados.innerHTML="";
+total.innerText=files.length;
+files.forEach(f=>{
+resultados.innerHTML+=`<div class="resultado">
+${f.name}<br>
+<button onclick="window.open('https://drive.google.com/file/d/${f.id}/view')">Abrir</button>
+</div>`;
+});
+}
+</script>
+
+</body>
+</html>
